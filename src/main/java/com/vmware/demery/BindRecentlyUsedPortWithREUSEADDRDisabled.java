@@ -4,7 +4,7 @@ import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 
-public class ReuseRecentlyBoundPorts {
+public class BindRecentlyUsedPortWithREUSEADDRDisabled {
   public static void main(String[] args) throws IOException {
     int port = ephemeralPort();
     try (ServerSocket socket = new ServerSocket()) {
