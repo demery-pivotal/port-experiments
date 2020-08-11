@@ -11,7 +11,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.stream.IntStream;
 
-public class BoundPorts {
+public class EphemeralReuseBoundPorts {
   public static void main(String[] args) {
     List<ServerSocket> sockets = new ArrayList<>();
     int nPorts = 500;
@@ -22,7 +22,7 @@ public class BoundPorts {
         .map(ServerSocket::getLocalPort)
         .collect(toSet());
 
-    sockets.forEach(BoundPorts::close);
+    sockets.forEach(EphemeralReuseBoundPorts::close);
 
     int nDuplicates = sockets.size() - uniquePortNumbers.size();
     System.out.format("%d/%d sockets bound to already bound ports%n", nDuplicates, sockets.size());

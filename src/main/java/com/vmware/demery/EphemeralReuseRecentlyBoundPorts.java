@@ -7,7 +7,7 @@ import java.net.ServerSocket;
 import java.util.Set;
 import java.util.stream.IntStream;
 
-public class ReservedPorts {
+public class EphemeralReuseRecentlyBoundPorts {
   public static void main(String[] args) {
     int nPorts = 500;
     Set<Integer> uniquePortNumbers = IntStream.range(0, nPorts)
