@@ -11,7 +11,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.stream.IntStream;
 
-public class EphemeralReuseBoundPorts {
+public class EphemeralReuseCurrentlyBoundPorts {
   public static void main(String[] args) {
     List<ServerSocket> sockets = new ArrayList<>();
     int nPorts = 500;
@@ -22,10 +22,11 @@ public class EphemeralReuseBoundPorts {
         .map(ServerSocket::getLocalPort)
         .collect(toSet());
 
-    sockets.forEach(EphemeralReuseBoundPorts::close);
+    sockets.forEach(EphemeralReuseCurrentlyBoundPorts::close);
 
     int nDuplicates = sockets.size() - uniquePortNumbers.size();
-    System.out.format("%d/%d sockets bound to already bound ports%n", nDuplicates, sockets.size());
+    System.out.format("With SO_REUSEADDR enabled, system picked %d/%d currently bound ports%n",
+        nDuplicates, nPorts);
   }
 
   private static void close(ServerSocket socket) {

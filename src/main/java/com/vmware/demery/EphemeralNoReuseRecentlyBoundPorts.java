@@ -7,7 +7,7 @@ import java.net.ServerSocket;
 import java.util.Set;
 import java.util.stream.IntStream;
 
-public class EphemeralReuseRecentlyBoundPorts {
+public class EphemeralNoReuseRecentlyBoundPorts {
   public static void main(String[] args) {
     int nPorts = 500;
     Set<Integer> uniquePortNumbers = IntStream.range(0, nPorts)
@@ -15,13 +15,12 @@ public class EphemeralReuseRecentlyBoundPorts {
         .collect(toSet());
 
     int nDuplicates = nPorts - uniquePortNumbers.size();
-    System.out.format("With SO_REUSEADDR enabled, system picked %d/%d recently bound ports%n",
+    System.out.format("With SO_REUSEADDR disabled, system picked %d/%d recently bound ports%n",
         nDuplicates, nPorts);
   }
 
   private static int reservePort() {
     try (ServerSocket socket = new ServerSocket()) {
-      socket.setReuseAddress(true);
       socket.bind(new InetSocketAddress(0));
       return socket.getLocalPort();
     } catch (Exception e) {
