@@ -46,9 +46,8 @@ public class CheckReservations {
 
     for (int i = 0; i < nPorts; i++) {
       int port = reserve(beforeBinding, afterBinding);
-      System.out.print(port);
       if (uniquePortNumbers.contains(port)) {
-        System.out.print("!!!");
+        System.out.print(" DUPLICATE");
         duplicates.add(port);
       }
       System.out.println();
@@ -76,6 +75,7 @@ public class CheckReservations {
       before.accept(socket);
       socket.bind(new InetSocketAddress(0));
       int port = socket.getLocalPort();
+      System.out.print(port);
       after.accept(socket);
       return port;
     } catch (IOException e) {
@@ -89,6 +89,7 @@ public class CheckReservations {
   public static void enableReuseAddress(ServerSocket socket) {
     try {
       socket.setReuseAddress(true);
+      System.out.print("+");
     } catch (SocketException e) {
       throw new RuntimeException(e);
     }
@@ -97,6 +98,7 @@ public class CheckReservations {
   public static void disableReuseAddress(ServerSocket socket) {
     try {
       socket.setReuseAddress(false);
+      System.out.print("-");
     } catch (SocketException e) {
       throw new RuntimeException(e);
     }
@@ -108,6 +110,7 @@ public class CheckReservations {
       Socket server = socket.accept();
       client.close();
       server.close();
+      System.out.print("=");
     } catch (IOException e) {
       throw new RuntimeException(e);
     }
