@@ -5,58 +5,34 @@ import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.net.SocketException;
-import java.net.SocketTimeoutException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
-import java.util.function.Consumer;
 
 public class CheckReservations {
   private static boolean log = true;
+  private static boolean connect = false;
+  private static boolean reuse;
+  private static boolean setReuse = false;
+  private static int sleep = 0;
+  private static int timeout = 0;
 
-  public static void main(String[] args) {
-    Consumer<ServerSocket> beforeBinding = CheckReservations::doNothing;
-    Consumer<ServerSocket> afterBinding = CheckReservations::doNothing;
 
+  public static void main(String[] args) throws IOException, InterruptedException {
     if (args.length < 1) {
       usage();
     }
 
     int nPorts = Integer.parseInt(args[0]);
-    for (int i = 1; i < args.length; i++) {
-      switch (args[i]) {
-        case "reuse":
-          beforeBinding = beforeBinding.andThen(CheckReservations::enableReuseAddress);
-          break;
-        case "no-reuse":
-          beforeBinding = beforeBinding.andThen(CheckReservations::disableReuseAddress);
-          break;
-        case "connect":
-          afterBinding = afterBinding.andThen(CheckReservations::connect);
-          break;
-        case "timeout":
-          if (args.length < i + 1) {
-            usage();
-          }
-          i++;
-          int timeout = Integer.parseInt(args[i]);
-          afterBinding = afterBinding.andThen(setTimeout(timeout));
-          break;
-        case "quiet":
-          log = false;
-          break;
-        default:
-          usage();
-      }
-    }
+    parseOptions(args);
 
     Set<Integer> uniquePortNumbers = new HashSet<>();
     List<Integer> duplicates = new ArrayList<>();
 
     for (int i = 0; i < nPorts; i++) {
-      int port = reserve(beforeBinding, afterBinding);
+      int port = reserve();
       if (uniquePortNumbers.contains(port)) {
         log(" DUPLICATE");
         duplicates.add(port);
@@ -73,76 +49,62 @@ public class CheckReservations {
     }
   }
 
-  private static void usage() {
-    System.out.format("Usage: %s nports [options]%n", CheckReservations.class.getSimpleName());
-    System.out.println("Options:");
-    System.out.println("    connect      Connect after binding");
-    System.out.println("    [no-]reuse   Enable/Disable SO_REUSEADDR before binding");
-    System.out.println("    timeout ms   Set socket timeout to <ms> after binding");
-    System.exit(1);
-  }
-
-  public static int reserve(Consumer<ServerSocket> before, Consumer<ServerSocket> after) {
+  public static int reserve() throws IOException, InterruptedException {
     int port = -1;
     try (ServerSocket socket = new ServerSocket()) {
-      before.accept(socket);
-      socket.bind(new InetSocketAddress(0));
-      port = socket.getLocalPort();
-      log(port);
-      after.accept(socket);
-    } catch (Throwable e) {
-      throw new RuntimeException("Port " + port, e);
+      setReuse(socket);
+      port = bind(socket);
+      connect(socket);
+      return port;
     }
+  }
+
+  private static int bind(ServerSocket socket) throws IOException {
+    socket.bind(new InetSocketAddress(0));
+    int port = socket.getLocalPort();
+    log(port);
     return port;
   }
 
-  public static void doNothing(ServerSocket ignored) {
-  }
-
-  public static void enableReuseAddress(ServerSocket socket) {
-    try {
-      socket.setReuseAddress(true);
-      log("+ ");
-    } catch (SocketException e) {
-      throw new RuntimeException(e);
+  private static void setReuse(ServerSocket socket) throws SocketException {
+    if (setReuse) {
+      socket.setReuseAddress(reuse);
     }
   }
 
-  public static void disableReuseAddress(ServerSocket socket) {
-    try {
-      socket.setReuseAddress(false);
-      log("- ");
-    } catch (SocketException e) {
-      throw new RuntimeException(e);
+  private static void setTimeout(ServerSocket socket) throws SocketException {
+    if (timeout > 0) {
+      log(" t" + timeout);
+      socket.setSoTimeout(timeout);
     }
   }
 
-  public static Consumer<ServerSocket> setTimeout(int ms) {
-    return s -> {
-      try {
-        s.setSoTimeout(ms);
-        log(" " + ms + "ms");
-      } catch (SocketException e) {
-        throw new RuntimeException(e);
-      }
-    };
-  }
-
-  public static void connect(ServerSocket socket) {
-    try (Socket client = new Socket(socket.getInetAddress(), socket.getLocalPort())) {
+  public static void connect(ServerSocket socket) throws IOException, InterruptedException {
+    if (!connect) {
+      return;
+    }
+    try (Socket ignored = new Socket(socket.getInetAddress(), socket.getLocalPort())) {
       log(" C");
-      try (Socket server = socket.accept()) {
-        log(" S");
-      } catch (SocketTimeoutException thrown) {
-        log(" TIMEOUT ");
-        throw thrown;
-      } finally {
-        log(" s");
-      }
-    } catch (IOException e) {
-      throw new RuntimeException(e);
+      sleep();
+      accept(socket);
     } finally {
       log(" c");
+    }
+  }
+
+  private static void sleep() throws InterruptedException {
+    if (sleep > 0) {
+      log(" z" + sleep);
+      Thread.sleep(sleep);
+    }
+  }
+
+  private static void accept(ServerSocket socket) throws IOException {
+    setTimeout(socket);
+    try (Socket ignored = socket.accept()) {
+      log(" S");
+    } finally {
+      log(" s");
     }
   }
 
@@ -156,5 +118,58 @@ public class CheckReservations {
     if (log) {
       System.out.print(msg);
     }
+  }
+
+  private static void parseOptions(String[] args) {
+    for (int i = 1; i < args.length; i++) {
+      switch (args[i]) {
+        case "connect":
+          connect = true;
+          break;
+        case "no-reuse":
+          reuse = false;
+          setReuse = true;
+          break;
+        case "quiet":
+          log = false;
+          break;
+        case "reuse":
+          reuse = true;
+          setReuse = true;
+          break;
+        case "sleep":
+          if (args.length < i + 1) {
+            usage();
+          }
+          i++;
+          sleep = Integer.parseInt(args[i]);
+          connect = true;
+          break;
+        case "timeout":
+          if (args.length < i + 1) {
+            usage();
+          }
+          i++;
+          timeout = Integer.parseInt(args[i]);
+          connect = true;
+          break;
+        default:
+          usage();
+      }
+    }
+  }
+
+  private static void usage() {
+    System.out.format("Usage: %s nports [options]%n", CheckReservations.class.getSimpleName());
+    System.out.println("Options:");
+    System.out.println("    [no-]reuse   Enable/Disable SO_REUSEADDR before binding");
+    System.out.println(
+        "    timeout ms   Set socket timeout to ms before server accept (sets connect true)");
+    System.out.println(
+        "    sleep ms     Sleep for ms between client connect and server accept (sets connect "
+            + "true)");
+    System.out.println("    connect      Connect after binding");
+    System.out.println("    quiet        Do not print details for each reservation");
+    System.exit(1);
   }
 }
