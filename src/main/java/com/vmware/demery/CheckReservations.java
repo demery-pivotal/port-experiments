@@ -65,7 +65,7 @@ public class CheckReservations {
       uniquePortNumbers.add(port);
     }
 
-    System.out.format("%nSystem picked %d duplicate ports in %d reservations%n", duplicates.size(),
+    System.out.format("System picked %d duplicate ports in %d reservations%n", duplicates.size(),
         nPorts);
     if (duplicates.size() != 0) {
       Collections.sort(duplicates);
