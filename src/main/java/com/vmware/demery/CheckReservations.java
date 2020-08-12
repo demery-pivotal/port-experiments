@@ -73,12 +73,11 @@ public class CheckReservations {
   }
 
   private static void usage() {
-    System.out.format("Usage: %s n [options]%n", CheckReservations.class.getSimpleName());
+    System.out.format("Usage: %s nports [options]%n", CheckReservations.class.getSimpleName());
     System.out.println("Options:");
-    System.out.println("    reuse:    Enable SO_REUSEADDR before binding");
-    System.out.println("    no-reuse: Disable SO_REUSEADDR before binding");
-    System.out.println("    timeout <ms>:  Set socket timeout to <ms> after binding");
-    System.out.println("    connect:  Connect after binding");
+    System.out.println("    connect      Connect after binding");
+    System.out.println("    [no-]reuse   Enable/Disable SO_REUSEADDR before binding");
+    System.out.println("    timeout ms   Set socket timeout to <ms> after binding");
     System.exit(1);
   }
 
@@ -87,7 +86,7 @@ public class CheckReservations {
       before.accept(socket);
       socket.bind(new InetSocketAddress(0));
       int port = socket.getLocalPort();
-      System.out.print(" " + port);
+      System.out.print(port);
       after.accept(socket);
       return port;
     } catch (IOException e) {
@@ -101,7 +100,7 @@ public class CheckReservations {
   public static void enableReuseAddress(ServerSocket socket) {
     try {
       socket.setReuseAddress(true);
-      System.out.print(" +");
+      System.out.print("+ ");
     } catch (SocketException e) {
       throw new RuntimeException(e);
     }
@@ -110,7 +109,7 @@ public class CheckReservations {
   public static void disableReuseAddress(ServerSocket socket) {
     try {
       socket.setReuseAddress(false);
-      System.out.print(" -");
+      System.out.print("- ");
     } catch (SocketException e) {
       throw new RuntimeException(e);
     }
@@ -120,7 +119,7 @@ public class CheckReservations {
     return s -> {
       try {
         s.setSoTimeout(ms);
-        System.out.print(" t" + ms);
+        System.out.print(" " + ms + "ms");
       } catch (SocketException e) {
         throw new RuntimeException(e);
       }
@@ -130,12 +129,11 @@ public class CheckReservations {
   public static void connect(ServerSocket socket) {
     try (Socket client = new Socket(socket.getInetAddress(), socket.getLocalPort())) {
       System.out.print(" C");
-      socket.setSoTimeout(100);
       try (Socket server = socket.accept()) {
         System.out.print(" S");
-      } catch (SocketTimeoutException ignored) {
+      } catch (SocketTimeoutException thrown) {
         System.out.print(" TIMEOUT ");
-        throw ignored;
+        throw thrown;
       } finally {
         System.out.print(" s");
       }
