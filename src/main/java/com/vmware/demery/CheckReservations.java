@@ -54,7 +54,7 @@ public class CheckReservations {
       uniquePortNumbers.add(port);
     }
 
-    System.out.format("%nSystem picked %d/%d duplicate ports%n", duplicates.size(), nPorts);
+    System.out.format("%nSystem picked %d duplicate ports in %d reservations%n", duplicates.size(), nPorts);
     if (duplicates.size() != 0) {
       Collections.sort(duplicates);
       System.out.println(duplicates);
@@ -62,11 +62,11 @@ public class CheckReservations {
   }
 
   private static void usage() {
-    System.err.format("Usage: %s n [options]%n", CheckReservations.class.getSimpleName());
-    System.err.println("Options:");
-    System.err.println("    reuse:    Enable SO_REUSEADDR before binding");
-    System.err.println("    no-reuse: Disable SO_REUSEADDR before binding");
-    System.err.println("    connect:  Connect after binding");
+    System.out.format("Usage: %s n [options]%n", CheckReservations.class.getSimpleName());
+    System.out.println("Options:");
+    System.out.println("    reuse:    Enable SO_REUSEADDR before binding");
+    System.out.println("    no-reuse: Disable SO_REUSEADDR before binding");
+    System.out.println("    connect:  Connect after binding");
     System.exit(1);
   }
 
@@ -115,5 +115,4 @@ public class CheckReservations {
       throw new RuntimeException(e);
     }
   }
-
 }
