@@ -18,7 +18,7 @@ public class CheckReservations {
     Consumer<ServerSocket> beforeBinding = CheckReservations::doNothing;
     Consumer<ServerSocket> afterBinding = CheckReservations::doNothing;
 
-    if (args.length < 1 || args.length > 3) {
+    if (args.length < 1) {
       usage();
     }
 
@@ -27,15 +27,24 @@ public class CheckReservations {
       switch (args[i]) {
         case "reuse":
           System.out.println("Enable SO_REUSEADDR before binding");
-          beforeBinding = CheckReservations::enableReuseAddress;
+          beforeBinding = beforeBinding.andThen(CheckReservations::enableReuseAddress);
           break;
         case "no-reuse":
           System.out.println("Disable SO_REUSEADDR before binding");
-          beforeBinding = CheckReservations::disableReuseAddress;
+          beforeBinding = beforeBinding.andThen(CheckReservations::disableReuseAddress);
           break;
         case "connect":
           System.out.println("Connect after binding");
-          afterBinding = CheckReservations::connect;
+          afterBinding = afterBinding.andThen(CheckReservations::connect);
+          break;
+        case "timeout":
+          if (args.length < i + 1) {
+            usage();
+          }
+          System.out.println("Set socket timeout after binding");
+          i++;
+          int timeout = Integer.parseInt(args[i]);
+          afterBinding = afterBinding.andThen(setTimeout(timeout));
           break;
         default:
           usage();
@@ -68,6 +77,7 @@ public class CheckReservations {
     System.out.println("Options:");
     System.out.println("    reuse:    Enable SO_REUSEADDR before binding");
     System.out.println("    no-reuse: Disable SO_REUSEADDR before binding");
+    System.out.println("    timeout <ms>:  Set socket timeout to <ms> after binding");
     System.out.println("    connect:  Connect after binding");
     System.exit(1);
   }
@@ -77,7 +87,7 @@ public class CheckReservations {
       before.accept(socket);
       socket.bind(new InetSocketAddress(0));
       int port = socket.getLocalPort();
-      System.out.print(port);
+      System.out.print(" " + port);
       after.accept(socket);
       return port;
     } catch (IOException e) {
@@ -91,7 +101,7 @@ public class CheckReservations {
   public static void enableReuseAddress(ServerSocket socket) {
     try {
       socket.setReuseAddress(true);
-      System.out.print("+ ");
+      System.out.print(" +");
     } catch (SocketException e) {
       throw new RuntimeException(e);
     }
@@ -100,10 +110,21 @@ public class CheckReservations {
   public static void disableReuseAddress(ServerSocket socket) {
     try {
       socket.setReuseAddress(false);
-      System.out.print("- ");
+      System.out.print(" -");
     } catch (SocketException e) {
       throw new RuntimeException(e);
     }
+  }
+
+  public static Consumer<ServerSocket> setTimeout(int ms) {
+    return s -> {
+      try {
+        s.setSoTimeout(ms);
+        System.out.print(" t" + ms);
+      } catch (SocketException e) {
+        throw new RuntimeException(e);
+      }
+    };
   }
 
   public static void connect(ServerSocket socket) {
@@ -111,17 +132,17 @@ public class CheckReservations {
       System.out.print(" C");
       socket.setSoTimeout(100);
       try (Socket server = socket.accept()) {
-        System.out.print("S");
+        System.out.print(" S");
       } catch (SocketTimeoutException ignored) {
         System.out.print(" TIMEOUT ");
         throw ignored;
       } finally {
-        System.out.print("s");
+        System.out.print(" s");
       }
     } catch (IOException e) {
       throw new RuntimeException(e);
     } finally {
-      System.out.print("c");
+      System.out.print(" c");
     }
   }
 }
