@@ -49,7 +49,7 @@ public class CheckReservations {
 
     int nDuplicates = nPorts - uniquePortNumbers.size();
 
-    System.out.format("System picked %d/%d duplicate ports%n", nDuplicates, nPorts);
+    System.out.format("%nSystem picked %d/%d duplicate ports%n", nDuplicates, nPorts);
   }
 
   private static void usage() {
@@ -89,6 +89,7 @@ public class CheckReservations {
         Socket server = s.accept();
         client.close();
         server.close();
+        System.out.print("=");
       } catch (IOException e) {
         throw new RuntimeException(e);
       }
@@ -99,6 +100,7 @@ public class CheckReservations {
     return s -> {
       try {
         s.setReuseAddress(reuse);
+        System.out.print(reuse ? "+" : "-");
       } catch (SocketException e) {
         throw new RuntimeException(e);
       }
