@@ -62,29 +62,17 @@ public class CheckReservations {
   private static int bind(ServerSocket socket) throws IOException {
     socket.bind(new InetSocketAddress(0));
     int port = socket.getLocalPort();
-    log(port);
+    log(" " + port);
     return port;
-  }
-
-  private static void setReuse(ServerSocket socket) throws SocketException {
-    if (setReuse) {
-      socket.setReuseAddress(reuse);
-    }
-  }
-
-  private static void setTimeout(ServerSocket socket) throws SocketException {
-    if (timeout > 0) {
-      log(" t" + timeout);
-      socket.setSoTimeout(timeout);
-    }
   }
 
   public static void connect(ServerSocket socket) throws IOException, InterruptedException {
     if (!connect) {
       return;
     }
+    log(" C…");
     try (Socket ignored = new Socket(socket.getInetAddress(), socket.getLocalPort())) {
-      log(" C");
+      log("C");
       sleep();
       accept(socket);
     } finally {
@@ -92,25 +80,36 @@ public class CheckReservations {
     }
   }
 
-  private static void sleep() throws InterruptedException {
-    if (sleep > 0) {
-      log(" z" + sleep);
-      Thread.sleep(sleep);
-    }
-  }
-
   private static void accept(ServerSocket socket) throws IOException {
     setTimeout(socket);
+    setTimeout(socket);
+    log(" S…");
     try (Socket ignored = socket.accept()) {
-      log(" S");
+      log("S");
     } finally {
       log(" s");
     }
   }
 
-  private static void log(int i) {
-    if (log) {
-      System.out.print(i);
+  private static void sleep() throws InterruptedException {
+    if (sleep > 0) {
+      log(" z" + sleep + "…");
+      Thread.sleep(sleep);
+      log("z");
+    }
+  }
+
+  private static void setReuse(ServerSocket socket) throws SocketException {
+    if (setReuse) {
+      socket.setReuseAddress(reuse);
+      log(reuse ? " +" : " -");
+    }
+  }
+
+  private static void setTimeout(ServerSocket socket) throws SocketException {
+    if (timeout > 0) {
+      socket.setSoTimeout(timeout);
+      log(" t" + timeout);
     }
   }
 
