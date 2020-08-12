@@ -13,8 +13,8 @@ import java.util.stream.IntStream;
 
 public class CheckReservations {
   public static void main(String[] args) {
-    Consumer<ServerSocket> beforeBinding = doNothing();
-    Consumer<ServerSocket> afterBinding = doNothing();
+    Consumer<ServerSocket> beforeBinding = CheckReservations::doNothing;
+    Consumer<ServerSocket> afterBinding = CheckReservations::doNothing;
 
     if (args.length < 1 || args.length > 3) {
       usage();
@@ -24,16 +24,16 @@ public class CheckReservations {
     for (int i = 1; i < args.length; i++) {
       switch (args[i]) {
         case "reuse":
-          System.out.println("Enabling SO_REUSEADDR");
-          beforeBinding = enableReuseAddress();
+          System.out.println("Enable SO_REUSEADDR before binding");
+          beforeBinding = CheckReservations::enableReuseAddress;
           break;
         case "no-reuse":
-          System.out.println("Disabling SO_REUSEADDR");
-          beforeBinding = disableReuseAddress();
+          System.out.println("Disable SO_REUSEADDR before binding");
+          beforeBinding = CheckReservations::disableReuseAddress;
           break;
         case "connect":
-          System.out.println("Connecting each reserved port");
-          afterBinding = connect();
+          System.out.println("Connect after binding");
+          afterBinding = CheckReservations::connect;
           break;
         default:
           usage();
@@ -53,8 +53,11 @@ public class CheckReservations {
   }
 
   private static void usage() {
-    System.err
-        .format("Usage: %s n [[no-]reuse] [connect]", CheckReservations.class.getSimpleName());
+    System.err.format("Usage: %s n [options]%n", CheckReservations.class.getSimpleName());
+    System.err.println("Options:");
+    System.err.println("    reuse:    Enable SO_REUSEADDR before binding");
+    System.err.println("    no-reuse: Disable SO_REUSEADDR before binding");
+    System.err.println("    connect:  Connect after binding");
     System.exit(1);
   }
 
@@ -62,48 +65,47 @@ public class CheckReservations {
     try (ServerSocket socket = new ServerSocket()) {
       before.accept(socket);
       socket.bind(new InetSocketAddress(0));
+      int port = socket.getLocalPort();
+      System.out.print(port);
       after.accept(socket);
-      return socket.getLocalPort();
+      System.out.print(" ");
+      return port;
     } catch (IOException e) {
       throw new RuntimeException(e);
     }
   }
 
-  public static Consumer<ServerSocket> doNothing() {
-    return s -> {
-    };
+  public static void doNothing(ServerSocket ignored) {
   }
 
-  public static Consumer<ServerSocket> enableReuseAddress() {
-    return setReuseAddress(true);
+  public static void enableReuseAddress(ServerSocket socket) {
+    try {
+      socket.setReuseAddress(true);
+      System.out.print("+");
+    } catch (SocketException e) {
+      throw new RuntimeException(e);
+    }
   }
 
-  public static Consumer<ServerSocket> disableReuseAddress() {
-    return setReuseAddress(false);
+  public static void disableReuseAddress(ServerSocket socket) {
+    try {
+      socket.setReuseAddress(false);
+      System.out.print("-");
+    } catch (SocketException e) {
+      throw new RuntimeException(e);
+    }
   }
 
-  public static Consumer<ServerSocket> connect() {
-    return s -> {
-      try {
-        Socket client = new Socket(s.getInetAddress(), s.getLocalPort());
-        Socket server = s.accept();
-        client.close();
-        server.close();
-        System.out.print("=");
-      } catch (IOException e) {
-        throw new RuntimeException(e);
-      }
-    };
+  public static void connect(ServerSocket socket) {
+    try {
+      Socket client = new Socket(socket.getInetAddress(), socket.getLocalPort());
+      Socket server = socket.accept();
+      client.close();
+      server.close();
+      System.out.print("=");
+    } catch (IOException e) {
+      throw new RuntimeException(e);
+    }
   }
 
-  private static Consumer<ServerSocket> setReuseAddress(boolean reuse) {
-    return s -> {
-      try {
-        s.setReuseAddress(reuse);
-        System.out.print(reuse ? "+" : "-");
-      } catch (SocketException e) {
-        throw new RuntimeException(e);
-      }
-    };
-  }
 }
