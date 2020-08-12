@@ -14,6 +14,8 @@ import java.util.Set;
 import java.util.function.Consumer;
 
 public class CheckReservations {
+  private static boolean log = true;
+
   public static void main(String[] args) {
     Consumer<ServerSocket> beforeBinding = CheckReservations::doNothing;
     Consumer<ServerSocket> afterBinding = CheckReservations::doNothing;
@@ -26,25 +28,24 @@ public class CheckReservations {
     for (int i = 1; i < args.length; i++) {
       switch (args[i]) {
         case "reuse":
-          System.out.println("Enable SO_REUSEADDR before binding");
           beforeBinding = beforeBinding.andThen(CheckReservations::enableReuseAddress);
           break;
         case "no-reuse":
-          System.out.println("Disable SO_REUSEADDR before binding");
           beforeBinding = beforeBinding.andThen(CheckReservations::disableReuseAddress);
           break;
         case "connect":
-          System.out.println("Connect after binding");
           afterBinding = afterBinding.andThen(CheckReservations::connect);
           break;
         case "timeout":
           if (args.length < i + 1) {
             usage();
           }
-          System.out.println("Set socket timeout after binding");
           i++;
           int timeout = Integer.parseInt(args[i]);
           afterBinding = afterBinding.andThen(setTimeout(timeout));
+          break;
+        case "quiet":
+          log = false;
           break;
         default:
           usage();
@@ -57,10 +58,10 @@ public class CheckReservations {
     for (int i = 0; i < nPorts; i++) {
       int port = reserve(beforeBinding, afterBinding);
       if (uniquePortNumbers.contains(port)) {
-        System.out.print(" DUPLICATE");
+        log(" DUPLICATE");
         duplicates.add(port);
       }
-      System.out.println();
+      log("\n");
       uniquePortNumbers.add(port);
     }
 
@@ -82,16 +83,17 @@ public class CheckReservations {
   }
 
   public static int reserve(Consumer<ServerSocket> before, Consumer<ServerSocket> after) {
+    int port = -1;
     try (ServerSocket socket = new ServerSocket()) {
       before.accept(socket);
       socket.bind(new InetSocketAddress(0));
-      int port = socket.getLocalPort();
-      System.out.print(port);
+      port = socket.getLocalPort();
+      log(port);
       after.accept(socket);
-      return port;
-    } catch (IOException e) {
-      throw new RuntimeException(e);
+    } catch (Throwable e) {
+      throw new RuntimeException("Port " + port, e);
     }
+    return port;
   }
 
   public static void doNothing(ServerSocket ignored) {
@@ -100,7 +102,7 @@ public class CheckReservations {
   public static void enableReuseAddress(ServerSocket socket) {
     try {
       socket.setReuseAddress(true);
-      System.out.print("+ ");
+      log("+ ");
     } catch (SocketException e) {
       throw new RuntimeException(e);
     }
@@ -109,7 +111,7 @@ public class CheckReservations {
   public static void disableReuseAddress(ServerSocket socket) {
     try {
       socket.setReuseAddress(false);
-      System.out.print("- ");
+      log("- ");
     } catch (SocketException e) {
       throw new RuntimeException(e);
     }
@@ -119,7 +121,7 @@ public class CheckReservations {
     return s -> {
       try {
         s.setSoTimeout(ms);
-        System.out.print(" " + ms + "ms");
+        log(" " + ms + "ms");
       } catch (SocketException e) {
         throw new RuntimeException(e);
       }
@@ -128,19 +130,31 @@ public class CheckReservations {
 
   public static void connect(ServerSocket socket) {
     try (Socket client = new Socket(socket.getInetAddress(), socket.getLocalPort())) {
-      System.out.print(" C");
+      log(" C");
       try (Socket server = socket.accept()) {
-        System.out.print(" S");
+        log(" S");
       } catch (SocketTimeoutException thrown) {
-        System.out.print(" TIMEOUT ");
+        log(" TIMEOUT ");
         throw thrown;
       } finally {
-        System.out.print(" s");
+        log(" s");
       }
     } catch (IOException e) {
       throw new RuntimeException(e);
     } finally {
-      System.out.print(" c");
+      log(" c");
+    }
+  }
+
+  private static void log(int i) {
+    if (log) {
+      System.out.print(i);
+    }
+  }
+
+  private static void log(String msg) {
+    if (log) {
+      System.out.print(msg);
     }
   }
 }
