@@ -5,6 +5,7 @@ import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.net.SocketException;
+import java.net.SocketTimeoutException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
@@ -54,7 +55,8 @@ public class CheckReservations {
       uniquePortNumbers.add(port);
     }
 
-    System.out.format("%nSystem picked %d duplicate ports in %d reservations%n", duplicates.size(), nPorts);
+    System.out.format("%nSystem picked %d duplicate ports in %d reservations%n", duplicates.size(),
+        nPorts);
     if (duplicates.size() != 0) {
       Collections.sort(duplicates);
       System.out.println(duplicates);
@@ -89,7 +91,7 @@ public class CheckReservations {
   public static void enableReuseAddress(ServerSocket socket) {
     try {
       socket.setReuseAddress(true);
-      System.out.print("+");
+      System.out.print("+ ");
     } catch (SocketException e) {
       throw new RuntimeException(e);
     }
@@ -98,21 +100,28 @@ public class CheckReservations {
   public static void disableReuseAddress(ServerSocket socket) {
     try {
       socket.setReuseAddress(false);
-      System.out.print("-");
+      System.out.print("- ");
     } catch (SocketException e) {
       throw new RuntimeException(e);
     }
   }
 
   public static void connect(ServerSocket socket) {
-    try {
-      Socket client = new Socket(socket.getInetAddress(), socket.getLocalPort());
-      Socket server = socket.accept();
-      client.close();
-      server.close();
-      System.out.print("=");
+    try (Socket client = new Socket(socket.getInetAddress(), socket.getLocalPort())) {
+      System.out.print(" C");
+      socket.setSoTimeout(100);
+      try (Socket server = socket.accept()) {
+        System.out.print("S");
+      } catch (SocketTimeoutException ignored) {
+        System.out.print(" TIMEOUT ");
+        throw ignored;
+      } finally {
+        System.out.print("s");
+      }
     } catch (IOException e) {
       throw new RuntimeException(e);
+    } finally {
+      System.out.print("c");
     }
   }
 }
