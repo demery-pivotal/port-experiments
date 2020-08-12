@@ -1,15 +1,16 @@
 package com.vmware.demery;
 
-import static java.util.stream.Collectors.toSet;
-
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.net.SocketException;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 import java.util.function.Consumer;
-import java.util.stream.IntStream;
 
 public class CheckReservations {
   public static void main(String[] args) {
@@ -40,16 +41,25 @@ public class CheckReservations {
       }
     }
 
-    Consumer<ServerSocket> before = beforeBinding;
-    Consumer<ServerSocket> after = afterBinding;
+    Set<Integer> uniquePortNumbers = new HashSet<>();
+    List<Integer> duplicates = new ArrayList<>();
 
-    Set<Integer> uniquePortNumbers = IntStream.range(0, nPorts)
-        .mapToObj(i -> reserve(before, after))
-        .collect(toSet());
+    for (int i = 0; i < nPorts; i++) {
+      int port = reserve(beforeBinding, afterBinding);
+      System.out.print(port);
+      if (uniquePortNumbers.contains(port)) {
+        System.out.print("!!!");
+        duplicates.add(port);
+      }
+      System.out.println();
+      uniquePortNumbers.add(port);
+    }
 
-    int nDuplicates = nPorts - uniquePortNumbers.size();
-
-    System.out.format("%nSystem picked %d/%d duplicate ports%n", nDuplicates, nPorts);
+    System.out.format("%nSystem picked %d/%d duplicate ports%n", duplicates.size(), nPorts);
+    if (duplicates.size() != 0) {
+      Collections.sort(duplicates);
+      System.out.println(duplicates);
+    }
   }
 
   private static void usage() {
@@ -66,9 +76,7 @@ public class CheckReservations {
       before.accept(socket);
       socket.bind(new InetSocketAddress(0));
       int port = socket.getLocalPort();
-      System.out.print(port);
       after.accept(socket);
-      System.out.print(" ");
       return port;
     } catch (IOException e) {
       throw new RuntimeException(e);
@@ -81,7 +89,6 @@ public class CheckReservations {
   public static void enableReuseAddress(ServerSocket socket) {
     try {
       socket.setReuseAddress(true);
-      System.out.print("+");
     } catch (SocketException e) {
       throw new RuntimeException(e);
     }
@@ -90,7 +97,6 @@ public class CheckReservations {
   public static void disableReuseAddress(ServerSocket socket) {
     try {
       socket.setReuseAddress(false);
-      System.out.print("-");
     } catch (SocketException e) {
       throw new RuntimeException(e);
     }
@@ -102,7 +108,6 @@ public class CheckReservations {
       Socket server = socket.accept();
       client.close();
       server.close();
-      System.out.print("=");
     } catch (IOException e) {
       throw new RuntimeException(e);
     }
