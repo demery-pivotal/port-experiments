@@ -34,7 +34,7 @@ public class CheckReservations {
     List<Integer> duplicates = new ArrayList<>();
 
     for (int i = 0; i < nPorts; i++) {
-      logf("%d.", i + 1);
+      logf("%8d", i + 1);
       int port = reserve();
       if (uniquePortNumbers.contains(port)) {
         log(" DUPLICATE");
