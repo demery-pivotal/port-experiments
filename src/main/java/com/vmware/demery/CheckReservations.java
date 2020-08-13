@@ -18,8 +18,10 @@ public class CheckReservations {
   private static boolean connect = false;
   private static boolean reuse;
   private static boolean setReuse = false;
-  private static int sleep = 0;
+  private static int preConnectDelay = 0;
   private static int timeout = 0;
+  private static long connectionHoldDuration = 0;
+  private static int preRetryDelay = 0;
 
 
   public static void main(String[] args) throws IOException, InterruptedException {
@@ -84,10 +86,12 @@ public class CheckReservations {
 
   private static void accept(ServerSocket socket) throws IOException, InterruptedException {
     setTimeout(socket);
+    sleep();
     log(" S…");
     while (true) {
       try (Socket server = socket.accept()) {
         logf("%d[%s]", server.getLocalPort(), server.getReuseAddress());
+        hold();
         return;
       } catch (SocketTimeoutException thrown) {
         sleep();
@@ -97,10 +101,26 @@ public class CheckReservations {
     }
   }
 
+  private static void hold() throws InterruptedException {
+    if (connectionHoldDuration > 0) {
+      logf(" h%s…", connectionHoldDuration);
+      Thread.sleep(connectionHoldDuration);
+      log("h");
+    }
+  }
+
+  private static void retry() throws InterruptedException {
+    if (preRetryDelay > 0) {
+      logf(" r%s…", preRetryDelay);
+      Thread.sleep(preRetryDelay);
+      log("r");
+    }
+  }
+
   private static void sleep() throws InterruptedException {
-    if (sleep > 0) {
-      logf(" z%s…", sleep);
-      Thread.sleep(sleep);
+    if (preConnectDelay > 0) {
+      logf(" z%s…", preConnectDelay);
+      Thread.sleep(preConnectDelay);
       log("z");
     }
   }
@@ -137,6 +157,10 @@ public class CheckReservations {
         case "connect":
           connect = true;
           break;
+        case "hold":
+          connect = true;
+          connectionHoldDuration = integerArg(args, ++i);
+          break;
         case "no-reuse":
           reuse = false;
           setReuse = true;
@@ -148,21 +172,17 @@ public class CheckReservations {
           reuse = true;
           setReuse = true;
           break;
-        case "sleep":
-          if (args.length < i + 1) {
-            usage();
-          }
-          i++;
-          sleep = Integer.parseInt(args[i]);
+        case "retry":
           connect = true;
+          preRetryDelay = integerArg(args, ++i);
+          break;
+        case "sleep":
+          connect = true;
+          preConnectDelay = integerArg(args, ++i);
           break;
         case "timeout":
-          if (args.length < i + 1) {
-            usage();
-          }
-          i++;
-          timeout = Integer.parseInt(args[i]);
           connect = true;
+          timeout = integerArg(args, ++i);
           break;
         default:
           usage();
@@ -170,16 +190,26 @@ public class CheckReservations {
     }
   }
 
+  private static int integerArg(String[] args, int i) {
+    if (args.length < i) {
+      usage();
+    }
+    return Integer.parseInt(args[i]);
+  }
+
   private static void usage() {
     System.out.format("Usage: %s nports [options]%n", CheckReservations.class.getSimpleName());
     System.out.println("Options:");
     System.out.println("    [no-]reuse   Enable/Disable SO_REUSEADDR before binding");
-    System.out.println(
-        "    timeout ms   Set socket timeout to ms before server accept (sets connect true)");
-    System.out.println(
-        "    sleep ms     Sleep for ms between client connect and server accept (sets connect "
-            + "true)");
     System.out.println("    connect      Connect after binding");
+    System.out.println("    timeout ms   Set socket timeout to ms before server accept"
+        + "(enables connect)");
+    System.out.println("    sleep ms     Sleep for ms between client connect and server accept"
+        + "(enables connect)");
+    System.out.println("    retry ms     Sleep for ms between attempts to accept"
+        + "(enables connect)");
+    System.out.println("    hold ms      Hold the connection for ms before closing"
+        + "(enables connect)");
     System.out.println("    quiet        Do not print details for each reservation");
     System.exit(1);
   }
