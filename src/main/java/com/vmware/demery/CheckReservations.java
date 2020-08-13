@@ -1,10 +1,12 @@
 package com.vmware.demery;
 
 import java.io.IOException;
+import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.net.SocketException;
+import java.net.SocketTimeoutException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
@@ -32,6 +34,7 @@ public class CheckReservations {
     List<Integer> duplicates = new ArrayList<>();
 
     for (int i = 0; i < nPorts; i++) {
+      logf("%d.", i + 1);
       int port = reserve();
       if (uniquePortNumbers.contains(port)) {
         log(" DUPLICATE");
@@ -50,19 +53,18 @@ public class CheckReservations {
   }
 
   public static int reserve() throws IOException, InterruptedException {
-    int port = -1;
     try (ServerSocket socket = new ServerSocket()) {
       setReuse(socket);
-      port = bind(socket);
+      int port = bind(socket);
       connect(socket);
       return port;
     }
   }
 
   private static int bind(ServerSocket socket) throws IOException {
-    socket.bind(new InetSocketAddress(0));
+    socket.bind(new InetSocketAddress((InetAddress) null, 0));
     int port = socket.getLocalPort();
-    log(" " + port);
+    logf(" %d[%s]", port, socket.getReuseAddress());
     return port;
   }
 
@@ -70,30 +72,34 @@ public class CheckReservations {
     if (!connect) {
       return;
     }
-    log(" C…");
-    try (Socket ignored = new Socket(socket.getInetAddress(), socket.getLocalPort())) {
-      log("C");
-      sleep();
+    try (Socket client = new Socket()) {
+      logf(" C[%s]…", client.getReuseAddress());
+      client.connect(socket.getLocalSocketAddress(), socket.getLocalPort());
+      logf("%d[%s]", client.getLocalPort(), client.getReuseAddress());
       accept(socket);
     } finally {
       log(" c");
     }
   }
 
-  private static void accept(ServerSocket socket) throws IOException {
-    setTimeout(socket);
+  private static void accept(ServerSocket socket) throws IOException, InterruptedException {
     setTimeout(socket);
     log(" S…");
-    try (Socket ignored = socket.accept()) {
-      log("S");
-    } finally {
-      log(" s");
+    while (true) {
+      try (Socket server = socket.accept()) {
+        logf("%d[%s]", server.getLocalPort(), server.getReuseAddress());
+        return;
+      } catch (SocketTimeoutException thrown) {
+        sleep();
+      } finally {
+        log(" s");
+      }
     }
   }
 
   private static void sleep() throws InterruptedException {
     if (sleep > 0) {
-      log(" z" + sleep + "…");
+      logf(" z%s…", sleep);
       Thread.sleep(sleep);
       log("z");
     }
@@ -116,6 +122,12 @@ public class CheckReservations {
   private static void log(String msg) {
     if (log) {
       System.out.print(msg);
+    }
+  }
+
+  private static void logf(String format, Object... obj) {
+    if (log) {
+      System.out.printf(format, obj);
     }
   }
 
