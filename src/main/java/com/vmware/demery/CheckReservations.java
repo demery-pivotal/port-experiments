@@ -1,5 +1,8 @@
 package com.vmware.demery;
 
+import static java.net.StandardSocketOptions.SO_REUSEADDR;
+import static java.net.StandardSocketOptions.SO_REUSEPORT;
+
 import java.io.IOException;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
@@ -16,12 +19,13 @@ import java.util.Set;
 public class CheckReservations {
   private static boolean log = true;
   private static boolean connect = false;
-  private static boolean reuse;
-  private static boolean setReuse = false;
-  private static int preConnectDelay = 0;
-  private static int timeout = 0;
   private static long connectionHoldDuration = 0;
-  private static int preRetryDelay = 0;
+  private static int preConnectDelay = 0;
+  private static boolean reuseAddress = false;
+  private static boolean setReuseAddress = false;
+  private static boolean reusePort = false;
+  private static boolean setReusePort = false;
+  private static int timeout = 0;
 
 
   public static void main(String[] args) throws IOException, InterruptedException {
@@ -34,20 +38,38 @@ public class CheckReservations {
 
     Set<Integer> uniquePortNumbers = new HashSet<>();
     List<Integer> duplicates = new ArrayList<>();
+    List<Integer> unavailable = new ArrayList<>();
 
     for (int i = 0; i < nPorts; i++) {
       logf("%8d", i + 1);
-      int port = reserve();
-      if (uniquePortNumbers.contains(port)) {
-        log(" DUPLICATE");
-        duplicates.add(port);
+      int port = -1;
+      try {
+        port = reserve();
+        if (uniquePortNumbers.contains(port)) {
+          log(" DUPLICATE");
+          duplicates.add(port);
+        }
+        uniquePortNumbers.add(port);
+      } catch (SocketTimeoutException ignored) {
+        // The server timed out accepting the connection. This may mean that the system gave us an
+        // ephemeral port that is already in use. The SO_REUSEPORT socket option enables this 
+        // behavior, as long as our socket and all existing uses are associated with the same user
+        // and all have SO_REUSEPORT enabled. On macOS, SO_REUSEPORT is enabled by default for each 
+        // socket. Java 8 offers no way to override this socket option, so we have to account for
+        // the possibility that the system could give us an ephemeral port that is already in use.
+        log(" X");
+        unavailable.add(port);
       }
       log("\n");
-      uniquePortNumbers.add(port);
     }
 
-    System.out.format("System picked %d duplicate ports in %d reservations%n", duplicates.size(),
-        nPorts);
+    System.out.format("Attempted %d reservations%n", nPorts);
+    System.out.format("    %d ports were already in use%n", unavailable.size());
+    if (duplicates.size() != 0) {
+      Collections.sort(duplicates);
+      System.out.println(duplicates);
+    }
+    System.out.format("    %d ports were already reserved%n", duplicates.size());
     if (duplicates.size() != 0) {
       Collections.sort(duplicates);
       System.out.println(duplicates);
@@ -56,7 +78,8 @@ public class CheckReservations {
 
   public static int reserve() throws IOException, InterruptedException {
     try (ServerSocket socket = new ServerSocket()) {
-      setReuse(socket);
+      setReuseAddress(socket);
+      setReusePort(socket);
       int port = bind(socket);
       connect(socket);
       return port;
@@ -65,8 +88,9 @@ public class CheckReservations {
 
   private static int bind(ServerSocket socket) throws IOException {
     socket.bind(new InetSocketAddress((InetAddress) null, 0));
+    logf(" B%s…", optionFlags(socket));
     int port = socket.getLocalPort();
-    logf(" %d[%s]", port, socket.getReuseAddress());
+    logf("%d%s", port, optionFlags(socket));
     return port;
   }
 
@@ -75,9 +99,9 @@ public class CheckReservations {
       return;
     }
     try (Socket client = new Socket()) {
-      logf(" C[%s]…", client.getReuseAddress());
+      logf(" C%s…", optionFlags(client));
       client.connect(socket.getLocalSocketAddress(), socket.getLocalPort());
-      logf("%d[%s]", client.getLocalPort(), client.getReuseAddress());
+      logf("%d%s", client.getLocalPort(), optionFlags(client));
       accept(socket);
     } finally {
       log(" c");
@@ -88,16 +112,11 @@ public class CheckReservations {
     setTimeout(socket);
     sleep();
     log(" S…");
-    while (true) {
-      try (Socket server = socket.accept()) {
-        logf("%d[%s]", server.getLocalPort(), server.getReuseAddress());
-        hold();
-        return;
-      } catch (SocketTimeoutException thrown) {
-        sleep();
-      } finally {
-        log(" s");
-      }
+    try (Socket server = socket.accept()) {
+      logf("%d%s", server.getLocalPort(), optionFlags(server));
+      hold();
+    } finally {
+      log(" s");
     }
   }
 
@@ -109,14 +128,6 @@ public class CheckReservations {
     }
   }
 
-  private static void retry() throws InterruptedException {
-    if (preRetryDelay > 0) {
-      logf(" r%s…", preRetryDelay);
-      Thread.sleep(preRetryDelay);
-      log("r");
-    }
-  }
-
   private static void sleep() throws InterruptedException {
     if (preConnectDelay > 0) {
       logf(" z%s…", preConnectDelay);
@@ -125,10 +136,17 @@ public class CheckReservations {
     }
   }
 
-  private static void setReuse(ServerSocket socket) throws SocketException {
-    if (setReuse) {
-      socket.setReuseAddress(reuse);
-      log(reuse ? " +" : " -");
+  private static void setReuseAddress(ServerSocket socket) throws IOException {
+    if (setReuseAddress) {
+      logf(" %sRA", optionFlag(reuseAddress));
+      socket.setOption(SO_REUSEADDR, reuseAddress);
+    }
+  }
+
+  private static void setReusePort(ServerSocket socket) throws IOException {
+    if (setReusePort) {
+      logf(" %sRP", optionFlag(reusePort));
+      socket.setOption(SO_REUSEPORT, reusePort);
     }
   }
 
@@ -161,20 +179,24 @@ public class CheckReservations {
           connect = true;
           connectionHoldDuration = integerArg(args, ++i);
           break;
-        case "no-reuse":
-          reuse = false;
-          setReuse = true;
+        case "no-ra":
+          reuseAddress = false;
+          setReuseAddress = true;
+          break;
+        case "no-rp":
+          reusePort = false;
+          setReusePort = true;
           break;
         case "quiet":
           log = false;
           break;
-        case "reuse":
-          reuse = true;
-          setReuse = true;
+        case "ra":
+          reuseAddress = true;
+          setReuseAddress = true;
           break;
-        case "retry":
-          connect = true;
-          preRetryDelay = integerArg(args, ++i);
+        case "rp":
+          reusePort = true;
+          setReusePort = true;
           break;
         case "sleep":
           connect = true;
@@ -200,7 +222,8 @@ public class CheckReservations {
   private static void usage() {
     System.out.format("Usage: %s nports [options]%n", CheckReservations.class.getSimpleName());
     System.out.println("Options:");
-    System.out.println("    [no-]reuse   Enable/Disable SO_REUSEADDR before binding");
+    System.out.println("    [no-]ra      Enable/Disable SO_REUSEADDR before binding");
+    System.out.println("    [no-]rp      Enable/Disable SO_REUSEPORT before binding");
     System.out.println("    connect      Connect after binding");
     System.out.println("    timeout ms   Set socket timeout to ms before server accept"
         + "(enables connect)");
@@ -212,5 +235,27 @@ public class CheckReservations {
         + "(enables connect)");
     System.out.println("    quiet        Do not print details for each reservation");
     System.exit(1);
+  }
+
+  private static String optionFlags(Socket socket) throws IOException {
+    boolean ra = socket.getOption(SO_REUSEADDR);
+    boolean rp = socket.getOption(SO_REUSEPORT);
+    return String.format("[%s]", optionFlags(ra, rp));
+  }
+
+  private static String optionFlags(ServerSocket socket) throws IOException {
+    boolean ra = socket.getOption(SO_REUSEADDR);
+    boolean rp = socket.getOption(SO_REUSEPORT);
+    return String.format("[%s]", optionFlags(ra, rp));
+  }
+
+  private static String optionFlags(boolean ra, boolean rp) {
+    String raFlag = optionFlag(ra);
+    String rpFlag = optionFlag(rp);
+    return String.format("%sRA%sRP", raFlag, rpFlag);
+  }
+
+  private static String optionFlag(boolean enabled) {
+    return enabled ? "+" : "-";
   }
 }
