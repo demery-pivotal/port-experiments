@@ -10,69 +10,63 @@ import java.net.ServerSocket;
 import java.net.Socket;
 import java.net.SocketException;
 import java.net.SocketTimeoutException;
+import java.net.UnknownHostException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
-public class CheckReservations {
+public class PortTool {
+  private static boolean accept = false;
+  private static InetAddress bindAddress = null;
+  private static int bindPort = 0;
   private static boolean log = true;
   private static boolean connect = false;
   private static long connectionHoldDuration = 0;
-  private static int preConnectDelay = 0;
+  private static int nPorts = 1;
+  private static int delayBetweenConnectAndAccept = 0;
   private static boolean reuseAddress = false;
-  private static boolean setReuseAddress = false;
   private static boolean reusePort = false;
+  private static boolean setReuseAddress = false;
   private static boolean setReusePort = false;
-  private static int timeout = 0;
-
+  private static int acceptTimeout = 0;
+  private static final List<Integer> unacceptablePorts = new ArrayList<>();
 
   public static void main(String[] args) throws IOException, InterruptedException {
     if (args.length < 1) {
       usage();
     }
-
-    int nPorts = Integer.parseInt(args[0]);
     parseOptions(args);
 
     Set<Integer> uniquePortNumbers = new HashSet<>();
     List<Integer> duplicates = new ArrayList<>();
-    List<Integer> unavailable = new ArrayList<>();
 
     for (int i = 0; i < nPorts; i++) {
       logf("%8d", i + 1);
       int port = -1;
-      try {
-        port = reserve();
-        if (uniquePortNumbers.contains(port)) {
-          log(" DUPLICATE");
-          duplicates.add(port);
-        }
-        uniquePortNumbers.add(port);
-      } catch (SocketTimeoutException ignored) {
-        // The server timed out accepting the connection. This may mean that the system gave us an
-        // ephemeral port that is already in use. The SO_REUSEPORT socket option enables this 
-        // behavior, as long as our socket and all existing uses are associated with the same user
-        // and all have SO_REUSEPORT enabled. On macOS, SO_REUSEPORT is enabled by default for each 
-        // socket. Java 8 offers no way to override this socket option, so we have to account for
-        // the possibility that the system could give us an ephemeral port that is already in use.
-        log(" X");
-        unavailable.add(port);
+      port = reserve();
+      if (uniquePortNumbers.contains(port)) {
+        log(" DUPLICATE");
+        duplicates.add(port);
       }
+      uniquePortNumbers.add(port);
       log("\n");
     }
 
-    System.out.format("Attempted %d reservations%n", nPorts);
-    System.out.format("    %d ports were already in use%n", unavailable.size());
-    if (duplicates.size() != 0) {
-      Collections.sort(duplicates);
-      System.out.println(duplicates);
+    if (nPorts > 1) {
+      System.out.format("%d duplicate ephemeral ports%n", duplicates.size());
+      if (duplicates.size() != 0) {
+        Collections.sort(duplicates);
+        System.out.println(duplicates);
+      }
     }
-    System.out.format("    %d ports were already reserved%n", duplicates.size());
-    if (duplicates.size() != 0) {
-      Collections.sort(duplicates);
-      System.out.println(duplicates);
+    if (accept) {
+      System.out.format("%d ports failed to accept%n", unacceptablePorts.size());
+      if (unacceptablePorts.size() != 0) {
+        Collections.sort(unacceptablePorts);
+        System.out.println(unacceptablePorts);
+      }
     }
   }
 
@@ -81,27 +75,29 @@ public class CheckReservations {
       setReuseAddress(socket);
       setReusePort(socket);
       int port = bind(socket);
-      connect(socket);
+      if (connect) {
+        connect(socket);
+      } else if (accept) {
+        accept(socket);
+      }
       return port;
     }
   }
 
   private static int bind(ServerSocket socket) throws IOException {
-    socket.bind(new InetSocketAddress((InetAddress) null, 0));
+    socket.bind(new InetSocketAddress(bindAddress, bindPort));
     logf(" B%s…", optionFlags(socket));
     int port = socket.getLocalPort();
-    logf("%d%s", port, optionFlags(socket));
+    logf("%s%s", socket.getLocalSocketAddress(), optionFlags(socket));
     return port;
   }
 
   public static void connect(ServerSocket socket) throws IOException, InterruptedException {
-    if (!connect) {
-      return;
-    }
     try (Socket client = new Socket()) {
       logf(" C%s…", optionFlags(client));
       client.connect(socket.getLocalSocketAddress(), socket.getLocalPort());
-      logf("%d%s", client.getLocalPort(), optionFlags(client));
+      logf("%s%s", client.getLocalSocketAddress(), optionFlags(client));
+      pauseAfterConnecting();
       accept(socket);
     } finally {
       log(" c");
@@ -109,18 +105,19 @@ public class CheckReservations {
   }
 
   private static void accept(ServerSocket socket) throws IOException, InterruptedException {
-    setTimeout(socket);
-    sleep();
-    log(" S…");
-    try (Socket server = socket.accept()) {
-      logf("%d%s", server.getLocalPort(), optionFlags(server));
-      hold();
+    setAcceptTimeout(socket);
+    log(" A…");
+    try (Socket ignored = socket.accept()) {
+      holdConnection();
+    } catch (SocketTimeoutException ignored) {
+      log(" X");
+      unacceptablePorts.add(socket.getLocalPort());
     } finally {
-      log(" s");
+      log(" a");
     }
   }
 
-  private static void hold() throws InterruptedException {
+  private static void holdConnection() throws InterruptedException {
     if (connectionHoldDuration > 0) {
       logf(" h%s…", connectionHoldDuration);
       Thread.sleep(connectionHoldDuration);
@@ -128,10 +125,10 @@ public class CheckReservations {
     }
   }
 
-  private static void sleep() throws InterruptedException {
-    if (preConnectDelay > 0) {
-      logf(" z%s…", preConnectDelay);
-      Thread.sleep(preConnectDelay);
+  private static void pauseAfterConnecting() throws InterruptedException {
+    if (delayBetweenConnectAndAccept > 0) {
+      logf(" z%s…", delayBetweenConnectAndAccept);
+      Thread.sleep(delayBetweenConnectAndAccept);
       log("z");
     }
   }
@@ -150,10 +147,10 @@ public class CheckReservations {
     }
   }
 
-  private static void setTimeout(ServerSocket socket) throws SocketException {
-    if (timeout > 0) {
-      socket.setSoTimeout(timeout);
-      log(" t" + timeout);
+  private static void setAcceptTimeout(ServerSocket socket) throws SocketException {
+    if (acceptTimeout > 0) {
+      socket.setSoTimeout(acceptTimeout);
+      log(" t" + acceptTimeout);
     }
   }
 
@@ -169,15 +166,35 @@ public class CheckReservations {
     }
   }
 
-  private static void parseOptions(String[] args) {
-    for (int i = 1; i < args.length; i++) {
+  private static void parseOptions(String[] args) throws UnknownHostException {
+    for (int i = 0; i < args.length; i++) {
       switch (args[i]) {
+        case "accept":
+          accept = true;
+          break;
+        case "address":
+          bindAddress = InetAddress.getByName(stringArg(args, ++i));
+          break;
         case "connect":
           connect = true;
+          accept = true;
+          break;
+        case "ep":
+          nPorts = integerArg(args, ++i);
+          bindPort = 0;
+          break;
+        case "help":
+          usage();
           break;
         case "hold":
-          connect = true;
           connectionHoldDuration = integerArg(args, ++i);
+          connect = true;
+          break;
+        case "host":
+          bindAddress = InetAddress.getLocalHost();
+          break;
+        case "loopback":
+          bindAddress = InetAddress.getLoopbackAddress();
           break;
         case "no-ra":
           reuseAddress = false;
@@ -186,6 +203,10 @@ public class CheckReservations {
         case "no-rp":
           reusePort = false;
           setReusePort = true;
+          break;
+        case "port":
+          bindPort = integerArg(args, ++i);
+          nPorts = 1;
           break;
         case "quiet":
           log = false;
@@ -199,14 +220,15 @@ public class CheckReservations {
           setReusePort = true;
           break;
         case "sleep":
+          delayBetweenConnectAndAccept = integerArg(args, ++i);
           connect = true;
-          preConnectDelay = integerArg(args, ++i);
           break;
         case "timeout":
-          connect = true;
-          timeout = integerArg(args, ++i);
+          acceptTimeout = integerArg(args, ++i);
+          accept = true;
           break;
         default:
+          System.out.format("Unrecognized arg %d %s%n", i, args[i]);
           usage();
       }
     }
@@ -219,21 +241,34 @@ public class CheckReservations {
     return Integer.parseInt(args[i]);
   }
 
+  private static String stringArg(String[] args, int i) {
+    if (args.length < i) {
+      usage();
+    }
+    return args[i];
+  }
+
   private static void usage() {
-    System.out.format("Usage: %s nports [options]%n", CheckReservations.class.getSimpleName());
+    System.out.format("Usage: %s [options]%n", PortTool.class.getSimpleName());
     System.out.println("Options:");
+    System.out.println("    accept       Accept after binding");
+    System.out.println("    address addr Bind to the specified address");
+    System.out.println("    connect      Connect to a client after binding"
+        + " (enables accept)");
+    System.out.println("    ep n         Bind to n ephemeral ports");
+    System.out.println("    help         Display this help message");
+    System.out.println("    hold t       Remain connected for t ms"
+        + " (enables connect)");
+    System.out.println("    host         Bind to the address of the local host");
+    System.out.println("    loopback     Bind to the loopback address");
+    System.out.println("    port p       Bind to the specified port p");
+    System.out.println("    quiet        Do not print details for each reservation");
     System.out.println("    [no-]ra      Enable/Disable SO_REUSEADDR before binding");
     System.out.println("    [no-]rp      Enable/Disable SO_REUSEPORT before binding");
-    System.out.println("    connect      Connect after binding");
-    System.out.println("    timeout ms   Set socket timeout to ms before server accept"
-        + "(enables connect)");
-    System.out.println("    sleep ms     Sleep for ms between client connect and server accept"
-        + "(enables connect)");
-    System.out.println("    retry ms     Sleep for ms between attempts to accept"
-        + "(enables connect)");
-    System.out.println("    hold ms      Hold the connection for ms before closing"
-        + "(enables connect)");
-    System.out.println("    quiet        Do not print details for each reservation");
+    System.out.println("    sleep t      Sleep for t ms between client connect and server accept"
+        + " (enables connect)");
+    System.out.println("    timeout t    Abandon accept after t ms"
+        + " (enables accept)");
     System.exit(1);
   }
 
