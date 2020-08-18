@@ -169,7 +169,7 @@ public class PortTool {
           accept = true;
           break;
         case "help":
-          usage();
+          usage(0);
           break;
         case "hold":
           connectionHoldDuration = integerArg(args, ++i);
@@ -221,26 +221,26 @@ public class PortTool {
           break;
         default:
           System.out.format("Unrecognized arg %d %s%n", i, args[i]);
-          usage();
+          usage(1);
       }
     }
   }
 
   private static int integerArg(String[] args, int i) {
     if (args.length < i) {
-      usage();
+      usage(1);
     }
     return Integer.parseInt(args[i]);
   }
 
   private static String stringArg(String[] args, int i) {
     if (args.length < i) {
-      usage();
+      usage(1);
     }
     return args[i];
   }
 
-  private static void usage() {
+  private static void usage(int exitCode) {
     System.out.format("Usage: %s [options]%n", PortTool.class.getSimpleName());
     System.out.println();
     System.out.println("\tAddress options (default: wildcard)");
@@ -273,7 +273,7 @@ public class PortTool {
     System.out.println();
     System.out.println("\t\thelp         Display this help message");
     System.out.println("\t\tquiet        Do not print details for each reservation");
-    System.exit(1);
+    System.exit(exitCode);
   }
 
   private static String userOptionFlags() {
