@@ -8,7 +8,6 @@ import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
-import java.net.SocketException;
 import java.net.SocketTimeoutException;
 import java.net.UnknownHostException;
 import java.util.ArrayList;
@@ -19,24 +18,21 @@ import java.util.Set;
 
 public class PortTool {
   private static boolean accept = false;
+  private static int acceptTimeout = 0;
   private static InetAddress bindAddress = null;
   private static int bindPort = 0;
-  private static boolean log = true;
   private static boolean connect = false;
   private static long connectionHoldDuration = 0;
-  private static int nPorts = 1;
   private static int delayBetweenConnectAndAccept = 0;
+  private static boolean log = true;
+  private static int nPorts = 1;
   private static boolean reuseAddress = false;
   private static boolean reusePort = false;
   private static boolean setReuseAddress = false;
   private static boolean setReusePort = false;
-  private static int acceptTimeout = 0;
   private static final List<Integer> unacceptablePorts = new ArrayList<>();
 
   public static void main(String[] args) throws IOException, InterruptedException {
-    if (args.length < 1) {
-      usage();
-    }
     parseOptions(args);
 
     Set<Integer> uniquePortNumbers = new HashSet<>();
@@ -44,8 +40,7 @@ public class PortTool {
 
     for (int i = 0; i < nPorts; i++) {
       logf("%8d", i + 1);
-      int port = -1;
-      port = reserve();
+      int port = reserve();
       if (uniquePortNumbers.contains(port)) {
         log(" DUPLICATE");
         duplicates.add(port);
@@ -54,26 +49,26 @@ public class PortTool {
       log("\n");
     }
 
+    int exitCode = 0;
     if (nPorts > 1) {
-      System.out.format("%d duplicate ephemeral ports%n", duplicates.size());
       if (duplicates.size() != 0) {
         Collections.sort(duplicates);
-        System.out.println(duplicates);
+        System.err.format("%d duplicate ephemeral ports: %s%n", duplicates.size(), duplicates);
+        exitCode = 1;
       }
     }
     if (accept) {
-      System.out.format("%d ports failed to accept%n", unacceptablePorts.size());
       if (unacceptablePorts.size() != 0) {
         Collections.sort(unacceptablePorts);
-        System.out.println(unacceptablePorts);
+        System.err.format("%d ports failed to accept: %s%n", unacceptablePorts.size(), unacceptablePorts);
+        exitCode = 1;
       }
     }
+    System.exit(exitCode);
   }
 
   public static int reserve() throws IOException, InterruptedException {
     try (ServerSocket socket = new ServerSocket()) {
-      setReuseAddress(socket);
-      setReusePort(socket);
       int port = bind(socket);
       if (connect) {
         connect(socket);
@@ -85,8 +80,11 @@ public class PortTool {
   }
 
   private static int bind(ServerSocket socket) throws IOException {
-    socket.bind(new InetSocketAddress(bindAddress, bindPort));
-    logf(" B%s…", optionFlags(socket));
+    InetSocketAddress socketAddress = new InetSocketAddress(bindAddress, bindPort);
+    logf(" B%s%s…", socketAddress, userOptionFlags());
+    setReuseAddress(socket);
+    setReusePort(socket);
+    socket.bind(socketAddress);
     int port = socket.getLocalPort();
     logf("%s%s", socket.getLocalSocketAddress(), optionFlags(socket));
     return port;
@@ -105,8 +103,8 @@ public class PortTool {
   }
 
   private static void accept(ServerSocket socket) throws IOException, InterruptedException {
-    setAcceptTimeout(socket);
-    log(" A…");
+    socket.setSoTimeout(acceptTimeout);
+    logf(" A%d…", acceptTimeout);
     try (Socket ignored = socket.accept()) {
       holdConnection();
     } catch (SocketTimeoutException ignored) {
@@ -135,22 +133,13 @@ public class PortTool {
 
   private static void setReuseAddress(ServerSocket socket) throws IOException {
     if (setReuseAddress) {
-      logf(" %sRA", optionFlag(reuseAddress));
       socket.setOption(SO_REUSEADDR, reuseAddress);
     }
   }
 
   private static void setReusePort(ServerSocket socket) throws IOException {
     if (setReusePort) {
-      logf(" %sRP", optionFlag(reusePort));
       socket.setOption(SO_REUSEPORT, reusePort);
-    }
-  }
-
-  private static void setAcceptTimeout(ServerSocket socket) throws SocketException {
-    if (acceptTimeout > 0) {
-      socket.setSoTimeout(acceptTimeout);
-      log(" t" + acceptTimeout);
     }
   }
 
@@ -179,10 +168,6 @@ public class PortTool {
           connect = true;
           accept = true;
           break;
-        case "ep":
-          nPorts = integerArg(args, ++i);
-          bindPort = 0;
-          break;
         case "help":
           usage();
           break;
@@ -203,6 +188,10 @@ public class PortTool {
         case "no-rp":
           reusePort = false;
           setReusePort = true;
+          break;
+        case "pick":
+          nPorts = integerArg(args, ++i);
+          bindPort = 0;
           break;
         case "port":
           bindPort = integerArg(args, ++i);
@@ -227,6 +216,9 @@ public class PortTool {
           acceptTimeout = integerArg(args, ++i);
           accept = true;
           break;
+        case "wildcard":
+          bindAddress = null;
+          break;
         default:
           System.out.format("Unrecognized arg %d %s%n", i, args[i]);
           usage();
@@ -250,26 +242,44 @@ public class PortTool {
 
   private static void usage() {
     System.out.format("Usage: %s [options]%n", PortTool.class.getSimpleName());
-    System.out.println("Options:");
-    System.out.println("    accept       Accept after binding");
-    System.out.println("    address addr Bind to the specified address");
-    System.out.println("    connect      Connect to a client after binding"
+    System.out.println();
+    System.out.println("\tAddress options (default: wildcard)");
+    System.out.println();
+    System.out.println("\t\taddress name Bind to the named address");
+    System.out.println("\t\thost         Bind to the address of the local host");
+    System.out.println("\t\tloopback     Bind to the loopback address");
+    System.out.println("\t\twildcard     Bind to the wildcard address");
+    System.out.println();
+    System.out.println("\tBind options (default: pick 1)");
+    System.out.println();
+    System.out.println("\t\tpick n       Bind to n ephemeral ports");
+    System.out.println("\t\tport p       Bind to port p");
+    System.out.println("\t\t[no-]ra      Enable/Disable SO_REUSEADDR before binding");
+    System.out.println("\t\t[no-]rp      Enable/Disable SO_REUSEPORT before binding");
+    System.out.println();
+    System.out.println("\tConnect options (default: none)");
+    System.out.println();
+    System.out.println("\t\taccept       Accept connections");
+    System.out.println("\t\tconnect      Connect to a client after binding"
         + " (enables accept)");
-    System.out.println("    ep n         Bind to n ephemeral ports");
-    System.out.println("    help         Display this help message");
-    System.out.println("    hold t       Remain connected for t ms"
+    System.out.println("\t\thold t       Remain connected for t ms"
         + " (enables connect)");
-    System.out.println("    host         Bind to the address of the local host");
-    System.out.println("    loopback     Bind to the loopback address");
-    System.out.println("    port p       Bind to the specified port p");
-    System.out.println("    quiet        Do not print details for each reservation");
-    System.out.println("    [no-]ra      Enable/Disable SO_REUSEADDR before binding");
-    System.out.println("    [no-]rp      Enable/Disable SO_REUSEPORT before binding");
-    System.out.println("    sleep t      Sleep for t ms between client connect and server accept"
+    System.out.println("\t\tsleep t      Sleep for t ms between client connect and server accept"
         + " (enables connect)");
-    System.out.println("    timeout t    Abandon accept after t ms"
+    System.out.println("\t\ttimeout t    Abandon accept after t ms"
         + " (enables accept)");
+    System.out.println();
+    System.out.println("\tOther options (default: none)");
+    System.out.println();
+    System.out.println("\t\thelp         Display this help message");
+    System.out.println("\t\tquiet        Do not print details for each reservation");
     System.exit(1);
+  }
+
+  private static String userOptionFlags() {
+    String raFlag = setReuseAddress ? optionFlag(reuseAddress) : "?";
+    String rpFlag = setReusePort ? optionFlag(reusePort) : "?";
+    return String.format("[%sRA%sRP]", raFlag, rpFlag);
   }
 
   private static String optionFlags(Socket socket) throws IOException {
