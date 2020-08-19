@@ -81,7 +81,7 @@ public class PortTool {
 
   private static int bind(ServerSocket socket) throws IOException {
     InetSocketAddress socketAddress = new InetSocketAddress(bindAddress, bindPort);
-    logf(" B%s%s…", socketAddress, userOptionFlags());
+    logf(" B%s%s-->", socketAddress, userOptionFlags());
     setReuseAddress(socket);
     setReusePort(socket);
     socket.bind(socketAddress);
@@ -92,7 +92,7 @@ public class PortTool {
 
   public static void connect(ServerSocket socket) throws IOException, InterruptedException {
     try (Socket client = new Socket()) {
-      logf(" C%s…", optionFlags(client));
+      log(" C-->");
       client.connect(socket.getLocalSocketAddress(), socket.getLocalPort());
       logf("%s%s", client.getLocalSocketAddress(), optionFlags(client));
       pauseAfterConnecting();
@@ -104,20 +104,20 @@ public class PortTool {
 
   private static void accept(ServerSocket socket) throws IOException, InterruptedException {
     socket.setSoTimeout(acceptTimeout);
-    logf(" A%d…", acceptTimeout);
+    logf(" A%d...", acceptTimeout);
     try (Socket ignored = socket.accept()) {
       holdConnection();
     } catch (SocketTimeoutException ignored) {
-      log(" X");
+      log("XXXX");
       unacceptablePorts.add(socket.getLocalPort());
     } finally {
-      log(" a");
+      log("a");
     }
   }
 
   private static void holdConnection() throws InterruptedException {
     if (connectionHoldDuration > 0) {
-      logf(" h%s…", connectionHoldDuration);
+      logf(" h%s-->", connectionHoldDuration);
       Thread.sleep(connectionHoldDuration);
       log("h");
     }
@@ -125,7 +125,7 @@ public class PortTool {
 
   private static void pauseAfterConnecting() throws InterruptedException {
     if (delayBetweenConnectAndAccept > 0) {
-      logf(" z%s…", delayBetweenConnectAndAccept);
+      logf(" z%s-->", delayBetweenConnectAndAccept);
       Thread.sleep(delayBetweenConnectAndAccept);
       log("z");
     }
