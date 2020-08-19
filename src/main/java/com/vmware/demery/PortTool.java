@@ -104,8 +104,9 @@ public class PortTool {
 
   private static void accept(ServerSocket socket) throws IOException, InterruptedException {
     socket.setSoTimeout(acceptTimeout);
-    logf(" A%d...", acceptTimeout);
-    try (Socket ignored = socket.accept()) {
+    logf(" A%d-->", acceptTimeout);
+    try (Socket server = socket.accept()) {
+      logf("%s%s", server.getLocalSocketAddress(), optionFlags(server));
       holdConnection();
     } catch (SocketTimeoutException ignored) {
       log("XXXX");
