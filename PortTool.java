@@ -1,5 +1,3 @@
-package com.vmware.demery;
-
 import static java.net.StandardSocketOptions.SO_REUSEADDR;
 import static java.net.StandardSocketOptions.SO_REUSEPORT;
 
