@@ -88,13 +88,13 @@ public class PortTool {
     return port;
   }
 
-  public static void connect(ServerSocket socket) throws IOException, InterruptedException {
+  public static void connect(ServerSocket server) throws IOException, InterruptedException {
     try (Socket client = new Socket()) {
       log(" C-->");
-      client.connect(socket.getLocalSocketAddress(), socket.getLocalPort());
+      client.connect(server.getLocalSocketAddress(), server.getLocalPort());
       logf("%s%s", client.getLocalSocketAddress(), optionFlags(client));
       pauseAfterConnecting();
-      accept(socket);
+      accept(server);
     } finally {
       log(" c");
     }
