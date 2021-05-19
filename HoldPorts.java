@@ -23,7 +23,9 @@ public class HoldPorts implements Runnable {
     try {
       ALL_ADDRESSES = Collections.list(NetworkInterface.getNetworkInterfaces()).stream()
         .flatMap(NetworkInterface::inetAddresses)
+        .peek(i -> System.out.println("Checking: " + i))
         .filter(HoldPorts::isReachable)
+        .peek(i -> System.out.println("Usable  : " + i))
         .collect(toSet());
     } catch (SocketException e) {
       throw new UncheckedIOException(e);
@@ -79,9 +81,9 @@ public class HoldPorts implements Runnable {
           );
           return;
         }
-        System.out.printf("Holding %s:%d%n",
-          server.getInetAddress(), server.getLocalPort()
-          );
+        System.out.printf("Holding %d on %s%n",
+          server.getLocalPort(), server.getInetAddress()
+        );
         while (true) {
           try {
             Thread.sleep(60_000);
