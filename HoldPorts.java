@@ -1,4 +1,5 @@
 import static java.net.StandardSocketOptions.SO_REUSEPORT;
+import static java.util.stream.Collectors.toList;
 import static java.util.stream.Collectors.toSet;
 
 import java.io.IOException;
@@ -11,12 +12,14 @@ import java.net.Socket;
 import java.net.SocketException;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.List;
 import java.util.Set;
-import java.util.concurrent.Executor;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.stream.Stream;
 
-public class HoldPorts implements Runnable {
+public class HoldPorts implements Callable<Void> {
   static private final Set<InetAddress> ALL_ADDRESSES;
 
   static {
@@ -47,13 +50,15 @@ public class HoldPorts implements Runnable {
     40404, // Cache server
   };
 
-  public static void main(String[] ignored) {
-    Executor executor = Executors.newFixedThreadPool(TCP_PORTS.length * ALL_ADDRESSES.size());
-    Arrays.stream(TCP_PORTS)
+  public static void main(String[] ignored) throws Exception {
+    List<HoldPorts> holders = Arrays.stream(TCP_PORTS)
       .boxed()
       .flatMap(HoldPorts::allSocketAddresses)
       .map(HoldPorts::new)
-      .forEach(executor::execute);
+      .collect(toList());
+    ExecutorService executor = Executors.newCachedThreadPool();
+    executor.invokeAll(holders);
+    executor.shutdown();
   }
 
   private static Stream<InetSocketAddress> allSocketAddresses(int port) {
@@ -68,7 +73,7 @@ public class HoldPorts implements Runnable {
   }
 
   @Override
-  public void run() {
+  public Void call() throws Exception {
     try (ServerSocket server = bind(addr)) {
       try (Socket client = connect(server)) {
         try {
@@ -79,28 +84,27 @@ public class HoldPorts implements Runnable {
             client.getLocalAddress(), client.getLocalPort(),
             e
           );
-          return;
+          throw e;
         }
         System.out.printf("Holding %d on %s%n",
           server.getLocalPort(), server.getInetAddress()
         );
         while (true) {
-          try {
-            Thread.sleep(60_000);
-          } catch (InterruptedException e) {
-          }
+          Thread.sleep(60_000);
         }
       } catch (IOException e) {
         System.out.printf("Cannot connect to %s:%d: %s%n",
           server.getInetAddress(), server.getLocalPort(),
           e
         );
+        throw e;
       }
     } catch (IOException e) {
       System.out.printf("Cannot bind %s:%d: %s%n",
         addr.getAddress(), addr.getPort(),
         e
       );
+      throw e;
     }
   }
 
